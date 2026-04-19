@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,11 +37,25 @@ class MainActivity : ComponentActivity() {
     private val GlassSurface = Color(0x1AFFFFFF) // Semi-transparent white
     private val GlassBorder = Color(0x33FFFFFF)
 
+    private fun restartLauncher() {
+        try {
+            // Using tsu to force-stop the launcher so it rebuilds the recents screen
+            Runtime.getRuntime().exec(arrayOf("tsu", "-c", "am force-stop com.android.launcher3"))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     @SuppressLint("WorldReadableFiles")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Prevents the app from appearing in screenshots and blanks it in the Recents menu
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
 
-        // Using standard shared prefs. In a rooted environment, LSPosed will read this via XSharedPreferences
         val prefs = getSharedPreferences("secured_apps_prefs", Context.MODE_PRIVATE)
 
         setContent {
@@ -49,18 +66,13 @@ class MainActivity : ComponentActivity() {
                     primary = NeonCyan
                 )
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = AmoledBlack
-                ) {
-                    AppListScreen(prefs, packageManager)
-                }
+                AppListScreen(prefs, packageManager, ::restartLauncher)
             }
         }
     }
 
     @Composable
-    fun AppListScreen(prefs: SharedPreferences, pm: PackageManager) {
+    fun AppListScreen(prefs: SharedPreferences, pm: PackageManager, onRestartClick: () -> Unit) {
         var installedApps by remember { mutableStateOf<List<ApplicationInfo>>(emptyList()) }
         var securedPackages by remember { 
             mutableStateOf(prefs.getStringSet("packages", emptySet()) ?: emptySet()) 
@@ -69,38 +81,51 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
                 val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                    .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 } // Filter out system apps for cleaner list
+                    .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 } 
                     .sortedBy { pm.getApplicationLabel(it).toString() }
                 installedApps = apps
             }
         }
 
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text(
-                text = "Infinity X Security",
-                color = NeonCyan,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 24.dp, top = 32.dp)
-            )
+        Scaffold(
+            containerColor = AmoledBlack,
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = onRestartClick,
+                    containerColor = NeonCyan,
+                    contentColor = AmoledBlack
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Restart Launcher")
+                }
+            }
+        ) { paddingValues ->
+            Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp)) {
+                Text(
+                    text = "Infinity X Security",
+                    color = NeonCyan,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 24.dp, top = 32.dp)
+                )
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(installedApps) { app ->
-                    val packageName = app.packageName
-                    val appName = pm.getApplicationLabel(app).toString()
-                    val isSecured = securedPackages.contains(packageName)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(installedApps) { app ->
+                        val packageName = app.packageName
+                        val appName = pm.getApplicationLabel(app).toString()
+                        val isSecured = securedPackages.contains(packageName)
 
-                    AppListItem(
-                        appName = appName,
-                        packageName = packageName,
-                        isSecured = isSecured,
-                        onCheckedChange = { checked ->
-                            val newSet = securedPackages.toMutableSet()
-                            if (checked) newSet.add(packageName) else newSet.remove(packageName)
-                            securedPackages = newSet
-                            prefs.edit().putStringSet("packages", newSet).apply()
-                        }
-                    )
+                        AppListItem(
+                            appName = appName,
+                            packageName = packageName,
+                            isSecured = isSecured,
+                            onCheckedChange = { checked ->
+                                val newSet = securedPackages.toMutableSet()
+                                if (checked) newSet.add(packageName) else newSet.remove(packageName)
+                                securedPackages = newSet
+                                prefs.edit().putStringSet("packages", newSet).apply()
+                            }
+                        )
+                    }
                 }
             }
         }
