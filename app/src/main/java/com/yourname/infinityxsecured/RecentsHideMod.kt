@@ -7,17 +7,15 @@ import android.graphics.Typeface
 import android.view.View
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XSharedPreferences
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 class RecentsHideMod : IXposedHookLoadPackage {
 
-    private val SECURED_APPS = setOf(
-        "com.whatsapp",
-        "com.google.android.apps.photos",
-        "com.android.settings" 
-    )
+    // Target the companion app's package to read its preferences
+    private val prefs = XSharedPreferences("com.yourname.infinityxsecured", "secured_apps_prefs")
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != "com.android.launcher3") return
@@ -46,7 +44,11 @@ class RecentsHideMod : IXposedHookLoadPackage {
                             XposedHelpers.callMethod(taskKey, "getPackageName") as String?
                         }
 
-                        if (SECURED_APPS.contains(packageName)) {
+                        // Reload prefs dynamically in case the user changed them
+                        prefs.reload()
+                        val securedApps = prefs.getStringSet("packages", emptySet()) ?: emptySet()
+
+                        if (securedApps.contains(packageName)) {
                             param.result = null
 
                             // AMOLED Black Background
